@@ -1,12 +1,17 @@
-# def main():
-#     print("Hello from backend")
-
-
-# if __name__=="__main__":
-#     main()
 from fastapi import FastAPI
+from backend.routers import users
+from backend.crud.database import init_db
+
 
 app = FastAPI()
+
+
+@app.on_event("startup")
+def startup():
+    init_db()
+
+
+app.include_router(users.router)
 
 
 @app.get("/")
