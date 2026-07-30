@@ -10,5 +10,5 @@ app = FastAPI()
 
 
 @app.get("/")
-def root():
-    return {"message": "Hello, FlyingBee!"}
+def hello():
+    return {"message": "Flight Booking API"}
