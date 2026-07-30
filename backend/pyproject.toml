@@ -5,8 +5,18 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "aiosmtplib>=5.1.2",
+    "dotenv>=0.9.9",
+    "email-validator>=2.3.0",
     "fastapi>=0.140.13",
+    "fastapi-mail>=1.6.5",
     "httpx>=0.28.1",
+    "passlib[bcrypt]>=1.7.4",
+    "bcrypt==4.0.1",
+    "psycopg2-binary>=2.9.12",
+    "psycopg[binary]>=3.3.4",
+    "pydantic[email]>=2.13.4",
+    "sqlmodel>=0.0.39",
     "uvicorn>=0.52.0",
 ]
 
