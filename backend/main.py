@@ -1,9 +1,23 @@
 from fastapi import FastAPI
 from backend.routers import users
 from backend.crud.database import init_db
+from backend.routers import flights
+from fastapi.middleware.cors import CORSMiddleware
 
 
 app = FastAPI()
+
+origins = [
+    "http://localhost:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.on_event("startup")
@@ -12,6 +26,7 @@ def startup():
 
 
 app.include_router(users.router)
+app.include_router(flights.router)
 
 
 @app.get("/")

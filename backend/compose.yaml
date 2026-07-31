@@ -5,8 +5,13 @@ services:
       dockerfile: backend/Dockerfile
     ports:
       - "8000:80"
+
+    env_file:
+      - .env
+
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/postgres
+
     depends_on:
       - db
 
@@ -24,3 +29,30 @@ services:
 
 volumes:
   postgres_data:
+
+    # services:
+    #   fastapi-app:
+    #     build:
+    #       context: ..
+    #       dockerfile: backend/Dockerfile
+    #     ports:
+    #       - "8000:80"
+    #     environment:
+    #       DATABASE_URL: postgresql://postgres:postgres@db:5432/postgres
+    #     depends_on:
+    #       - db
+
+    #   db:
+    #     image: postgres:16
+    #     restart: always
+    #     environment:
+    #       POSTGRES_USER: postgres
+    #       POSTGRES_PASSWORD: postgres
+    #       POSTGRES_DB: postgres
+    #     ports:
+    #       - "5432:5432"
+    #     volumes:
+    #       - postgres_data:/var/lib/postgresql/data
+
+    # volumes:
+    #   postgres_data:

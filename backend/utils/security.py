@@ -28,7 +28,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def create_access_token(data: dict, expires_delta: timedelta | None = None):
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     data_to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
@@ -44,6 +44,6 @@ def authenticate_user(session: Session, email: str, password: str):
     # user = get_user_by_email(session, email)
     if not user:
         return False
-    if not verify_password(password, user.hashed_password):
+    if not verify_password(password, user.password):
         return False
     return user

@@ -1,10 +1,16 @@
 from sqlmodel import Session, create_engine, SQLModel
 from dotenv import load_dotenv
 import os
+from pathlib import Path
 
-load_dotenv()
+env_path = Path(__file__).resolve().parents[1] / ".env"
+load_dotenv(dotenv_path=env_path)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL is not set")
+
 
 engine = create_engine(DATABASE_URL, echo=True)
 
