@@ -1,4 +1,4 @@
-from sqlmodel import Session, create_engine, SQLModel
+from sqlmodel import Session, create_engine
 from dotenv import load_dotenv
 import os
 from pathlib import Path
@@ -21,4 +21,5 @@ def get_session():
 
 
 def init_db():
-    SQLModel.metadata.create_all(engine)
+    # SQLModel.metadata.create_all(engine)
+    pass

@@ -7,14 +7,18 @@ from backend.crud.orders import create_order
 
 from backend.external_services.travelpayouts import search_flights
 
-from backend.models.orders import FlightOrder
+from backend.models.orders import FlightOrder, Traveler
+from backend.models.bookings import Booking
+from backend.models.users import UserInDB
 
 from backend.schemas.flights import FlightSearch
 from backend.schemas.orders import (
     FlightOrderRequest,
-    FlightOrderResponse,
 )
 from backend.schemas.flights import FlightOffer
+from backend.schemas.bookings import BookingResponse
+
+from backend.dependencies import get_current_user
 
 import logging
 
@@ -313,28 +317,35 @@ async def confirm_price(
 
 @router.post(
     "/booking/flight-orders",
-    response_model=FlightOrderResponse,
+    response_model=BookingResponse,
 )
 async def flight_order(
     request: FlightOrderRequest,
+    current_user: UserInDB = Depends(get_current_user),
     session: Session = Depends(get_session),
-    create_flight_order_use_case=Depends(get_create_flight_order_use_case),
 ):
     """
-    Create a local flight order.
+    Create a FlyingBee flight booking.
 
-    Travelpayouts provides the flight/search/booking link.
-    Our application stores the order locally.
+    The selected flight and traveler information are stored
+    together as a local booking.
+
+    Travelpayouts provides the flight information and booking
+    link. FlyingBee owns the local booking record.
     """
 
-    logger.info("Flight order creation initiated")
+    logger.info(
+        "Flight order creation initiated by user_id=%s",
+        current_user.id,
+    )
 
     try:
         # ----------------------------------------------------
-        # Create local order
+        # 1. Create the flight order
         # ----------------------------------------------------
 
         order = FlightOrder(
+            user_id=current_user.id,
             flight_number=request.flight_number,
             airline=request.airline,
             origin=request.origin,
@@ -347,32 +358,111 @@ async def flight_order(
         )
 
         # ----------------------------------------------------
-        # Save order
+        # 2. Create traveler records
         # ----------------------------------------------------
 
-        saved_order = create_flight_order_use_case(
-            session,
-            order,
+        for traveler_data in request.travelers:
+            traveler = Traveler(
+                first_name=traveler_data.first_name,
+                last_name=traveler_data.last_name,
+                date_of_birth=traveler_data.date_of_birth,
+                gender=traveler_data.gender,
+                email=traveler_data.email,
+                phone=traveler_data.phone,
+                passport_number=traveler_data.passport_number,
+                passport_expiry=traveler_data.passport_expiry,
+                passport_country=traveler_data.passport_country,
+            )
+
+            order.travelers.append(traveler)
+
+        # ----------------------------------------------------
+        # 3. Save order + travelers
+        # ----------------------------------------------------
+
+        session.add(order)
+
+        session.flush()
+
+        # -----------------------------------------
+        # 4. Create application Booking
+        # -----------------------------------------
+
+        booking = Booking(
+            user_id=current_user.id,
+            flight_order_id=order.id,
+            status="CONFIRMED",
         )
+
+        session.add(booking)
+
+        # -----------------------------------------
+        # 5. Commit everything together
+        # -----------------------------------------
+
+        session.commit()
+
+        session.refresh(order)
+        session.refresh(booking)
 
         logger.info(
-            "Flight order created successfully: %s",
-            saved_order.id,
+            "Booking created successfully: user_id=%s booking_id=%s flight_order_id=%s",
+            current_user.id,
+            booking.id,
+            order.id,
         )
 
-        return {
-            "order_id": str(saved_order.id),
-            "status": saved_order.status,
-            "message": ("Flight order created successfully"),
-        }
+        return BookingResponse(
+            id=str(booking.id),
+            flight_order_id=str(order.id),
+            status=booking.status,
+            message="Flight booking created successfully",
+        )
 
     except Exception:
-        logger.exception("Flight order creation failed")
+        session.rollback()
+
+        logger.exception(
+            "Flight booking creation failed for user_id=%s",
+            current_user.id,
+        )
 
         raise HTTPException(
             status_code=500,
-            detail=("An unexpected error occurred while creating the flight order"),
+            detail=("An unexpected error occurred while creating the flight booking"),
         )
+
+    #     session.commit()
+
+    #     session.refresh(order)
+
+    #     logger.info(
+    #         "Flight order created successfully: %s",
+    #         order.id,
+    #     )
+
+    #     # ----------------------------------------------------
+    #     # 4. Return booking information
+    #     # ----------------------------------------------------
+
+    #     return FlightOrderResponse(
+    #         order_id=str(order.id),
+    #         status=order.status,
+    #         message="Flight booking created successfully",
+    #         travelers_count=len(order.travelers),
+    #     )
+
+    # except Exception:
+    #     session.rollback()
+
+    #     logger.exception(
+    #         "Flight order creation failed",
+    #     )
+
+    #     raise HTTPException(
+    #         status_code=500,
+    #         detail="An unexpected error occurred while creating the flight booking",
+    #     )
 
 
 # ============================================================
@@ -443,16 +533,21 @@ async def view_seat_map_post(
 @router.get("/booking/flight-orders/{booking_id}")
 async def get_booking_details(
     booking_id: str,
+    current_user: UserInDB = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
     """
-    Get booking details.
-
-    Uses the local database order.
+    Get a booking including its traveler information.
     """
 
     try:
         from uuid import UUID
+
+        from sqlmodel import select
+
+        # ----------------------------------------------------
+        # Validate booking ID
+        # ----------------------------------------------------
 
         try:
             booking_uuid = UUID(booking_id)
@@ -463,20 +558,54 @@ async def get_booking_details(
                 detail="Invalid booking ID format",
             )
 
-        # Import here to keep the router structure
-        # compatible with the existing project.
-
-        from sqlmodel import select
+        # ----------------------------------------------------
+        # Get flight order
+        # ----------------------------------------------------
 
         order = session.exec(
-            select(FlightOrder).where(FlightOrder.id == booking_uuid)
+            select(FlightOrder).where(
+                FlightOrder.id == booking_uuid,
+                FlightOrder.user_id == current_user.id,
+            )
         ).first()
 
         if not order:
             raise HTTPException(
                 status_code=404,
-                detail=("Booking not found"),
+                detail="Booking not found",
             )
+
+        # ----------------------------------------------------
+        # Get travelers belonging to this order
+        # ----------------------------------------------------
+
+        travelers = session.exec(
+            select(Traveler).where(Traveler.order_id == booking_uuid)
+        ).all()
+
+        # ----------------------------------------------------
+        # Format travelers
+        # ----------------------------------------------------
+
+        traveler_data = [
+            {
+                "id": str(traveler.id),
+                "first_name": traveler.first_name,
+                "last_name": traveler.last_name,
+                "date_of_birth": traveler.date_of_birth,
+                "gender": traveler.gender,
+                "email": traveler.email,
+                "phone": traveler.phone,
+                "passport_number": traveler.passport_number,
+                "passport_expiry": traveler.passport_expiry,
+                "passport_country": traveler.passport_country,
+            }
+            for traveler in travelers
+        ]
+
+        # ----------------------------------------------------
+        # Return booking + travelers
+        # ----------------------------------------------------
 
         return {
             "id": str(order.id),
@@ -489,6 +618,8 @@ async def get_booking_details(
             "currency": order.currency,
             "booking_link": order.booking_link,
             "status": order.status,
+            "created_at": order.created_at,
+            "travelers": traveler_data,
         }
 
     except HTTPException:
@@ -499,7 +630,7 @@ async def get_booking_details(
 
         raise HTTPException(
             status_code=500,
-            detail=("An error occurred while retrieving booking details"),
+            detail="An error occurred while retrieving booking details",
         )
 
 
@@ -511,6 +642,7 @@ async def get_booking_details(
 @router.delete("/booking/flight-orders/{booking_id}")
 async def cancel_booking(
     booking_id: str,
+    current_user: UserInDB = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
     """
@@ -534,7 +666,8 @@ async def cancel_booking(
             )
 
         order = session.exec(
-            select(FlightOrder).where(FlightOrder.id == booking_uuid)
+            select(FlightOrder).where(FlightOrder.id == booking_uuid),
+            FlightOrder.user_id == current_user.id,
         ).first()
 
         if not order:
@@ -612,6 +745,7 @@ async def search_locations(
 @router.get("/bookings")
 async def get_user_bookings(
     session: Session = Depends(get_session),
+    current_user: UserInDB = Depends(get_current_user),
     cursor: str | None = Query(
         None,
         description="Cursor for pagination",
@@ -636,7 +770,12 @@ async def get_user_bookings(
     try:
         from sqlmodel import select
 
-        statement = select(FlightOrder).order_by(FlightOrder.id.desc()).limit(limit)
+        statement = (
+            select(FlightOrder)
+            .where(FlightOrder.user_id == current_user.id)
+            .order_by(FlightOrder.id.desc())
+            .limit(limit)
+        )
 
         orders = session.exec(statement).all()
 
