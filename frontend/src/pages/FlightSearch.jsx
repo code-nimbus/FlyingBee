@@ -46,7 +46,7 @@ export default function FlightSearch() {
         try {
             const res = await searchFlights(form);
 
-            setResults(res.flights);
+            setResults(res.flights || []);
         } catch (err) {
             console.log(err);
             alert("Unable to search");

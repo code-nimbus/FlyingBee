@@ -1,10 +1,44 @@
 import axios from "axios";
 
+
 const api = axios.create({
-    baseURL: "http://localhost:8000/api",
+
+    baseURL: "http://localhost:8000/api"
+
 });
 
-export const searchFlights = async (data) => {
-    const response = await api.post("/flights/search", data);
+
+
+export async function searchFlights(data) {
+
+    const response = await api.post(
+        "/flights/search",
+        data
+    );
+
+
     return response.data;
+
+}
+
+export const createFlightOrder = async (data) => {
+
+    const response = await api.post(
+        "/booking/flight-orders",
+        data
+    );
+
+
+    return response.data;
+
 };
+// import axios from "axios";
+
+// const api = axios.create({
+//     baseURL: "http://localhost:8000/api",
+// });
+
+// export const searchFlights = async (data) => {
+//     const response = await api.post("/flights/search", data);
+//     return response.data;
+// };
