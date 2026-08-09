@@ -6,6 +6,7 @@ from backend.crud.database import get_session
 from backend.crud.orders import create_order
 
 from backend.external_services.travelpayouts import search_flights
+from backend.external_services.cache import redis_cache
 
 from backend.models.orders import FlightOrder, Traveler
 from backend.models.bookings import Booking
@@ -21,7 +22,7 @@ from backend.schemas.bookings import BookingResponse
 from backend.dependencies import get_current_user
 
 import logging
-
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +170,16 @@ async def search_flights_get(
     The route/function name follows the Nehemiah tutorial,
     while Travelpayouts is used underneath.
     """
+    request_body = request.model_dump(exclude_none=True)
+    print(request_body)
+    # key, value
+    key = f"flights:{json.dumps(request_body, sort_keys=True, default=str)}"
+    print(key)
+    cached_result = redis_cache.get(key)
 
+    if cached_result:
+        logger.info("Returning cached flight results")
+        return cached_result
     try:
         # Travelpayouts provider call
         api_response = await search_flights_use_case(
@@ -241,12 +251,26 @@ async def search_flights_get(
         # Return the same general structure used by the app
         # ----------------------------------------------------
 
-        return {
+        # return {
+        #     "success": api_response.get("success"),
+        #     "currency": api_response.get("currency"),
+        #     "count": len(formatted),
+        #     "flights": formatted,
+        # }
+        response = {
             "success": api_response.get("success"),
             "currency": api_response.get("currency"),
             "count": len(formatted),
             "flights": formatted,
         }
+
+        redis_cache.set(
+            key,
+            response,
+            expiration_seconds=300,
+        )
+
+        return response
 
     except HTTPException:
         raise
@@ -666,8 +690,10 @@ async def cancel_booking(
             )
 
         order = session.exec(
-            select(FlightOrder).where(FlightOrder.id == booking_uuid),
-            FlightOrder.user_id == current_user.id,
+            select(FlightOrder).where(
+                FlightOrder.id == booking_uuid,
+                FlightOrder.user_id == current_user.id,
+            )
         ).first()
 
         if not order:
