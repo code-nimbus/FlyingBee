@@ -1,342 +1,275 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlmodel import Session
 from typing import Annotated
+# import uuid as uuid_module
 
-from backend.crud.database import get_session
-from backend.crud.orders import create_order
+from backend.infrastructure.redis import async_redis
+from backend.application.bookings.create_flight_order import (
+    CreateFlightOrder,
+    FlightOrderProviderError,
+    InvalidFlightOrderRequest,
+)
+# from application.bookings.cancel_booking import (
+#     BookingAlreadyCancelled,
+#     BookingCannotBeCancelled,
+#     BookingNotFound,
+#     CancelBooking,
+#     CancelBookingCommand,
+# )
+# from application.bookings.get_booking_details import (
+#     BookingDetailsNotFound,
+#     GetBookingDetails,
+# )
+# from application.bookings.get_seat_map import (
+#     GetSeatMap,
+#     InvalidSeatMapRequest,
+#     SeatMapBookingNotFound,
+#     SeatMapProviderError,
+# )
+# from application.bookings.get_user_bookings import GetUserBookings
 
-from backend.external_services.travelpayouts import search_flights
-from backend.external_services.cache import redis_cache
+# from application.flights.confirm_flight_price import (
+#     ConfirmFlightPrice,
+#     FlightPricingProviderError,
+#     InvalidFlightPricingRequest,
+# )
+# from application.flights.get_seat_map_from_flight_offer import (
+#     GetSeatMapFromFlightOffer,
+#     InvalidSeatMapOfferRequest,
+#     SeatMapFromOfferProviderError,
+# )
 
-from backend.models.orders import FlightOrder, Traveler
-from backend.models.bookings import Booking
+from backend.application.flights.search_flights import (
+    FlightSearchProviderError,
+    InvalidFlightSearchRequest,
+    SearchFlights,
+)
+
+# from application.flights.search_locations import (
+#     InvalidLocationSearchRequest,
+#     LocationSearchProviderError,
+#     SearchLocations,
+# )
+
+from backend.external_services.duffel import duffel_flight_service
+
+# from infrastructure.bookings.booking_success_presenter import (
+#     BookingSuccessPresenter,
+# )
+from backend.infrastructure.bookings.kafka_booking_event_publisher import (
+    KafkaBookingEventPublisher,
+)
+from backend.infrastructure.bookings.redis_user_booking_cache import (
+    RedisUserBookingCache,
+)
+from backend.infrastructure.bookings.sqlmodel_booking_repository import (
+    SqlModelBookingRepository,
+)
+
+# from backend.infrastructure.flights.duffel_flight_order_cancellation_gateway import (
+#     DuffelFlightOrderCancellationGateway,
+# )
+from backend.infrastructure.flights.duffel_flight_order_gateway import (
+    DuffelFlightOrderGateway,
+)
+# from infrastructure.flights.duffel_location_search_gateway import (
+#     DuffelLocationSearchGateway,
+# )
+# from infrastructure.flights.duffel_pricing_gateway import (
+#     DuffelPricingGateway,
+# )
+# from infrastructure.flights.duffel_seat_map_gateway import (
+#     DuffelSeatMapGateway,
+# )
+
+from backend.infrastructure.flights.duffel_search_gateway import (
+    DuffelSearchGateway,
+)
+
+# from schemas.flights import FlightPricingResponse
+
+from backend.schemas.flight_search import FlightSearchRequestGet
+
+# from schemas.flight_price_confirm import FlightOffer
+from backend.schemas.flight_order import FlightOrderRequestBody
+
+from backend.utils.security import get_current_user
 from backend.models.users import UserInDB
 
-from backend.schemas.flights import FlightSearch
-from backend.schemas.orders import (
-    FlightOrderRequest,
+from backend.external_services.cache import redis_cache
+
+# from schemas.locations import (
+#     AirportCitySearchRequest as LocationSearchRequest,
+#     AirportCitySearchResponse as LocationSearchResponse,
+# )
+
+from backend.schemas.bookings import (
+    BookingResponse,
 )
-from backend.schemas.flights import FlightOffer
-from backend.schemas.bookings import BookingResponse
 
-from backend.dependencies import get_current_user
+from backend.crud.database import get_session
+# from utils.pagination import MAX_PAGINATION_LIMIT
 
-import logging
-import json
+from backend.utils.log_manager import get_app_logger
 
-logger = logging.getLogger(__name__)
+# from backend.utils.kafka import kafka_producer
+from backend.utils.kafka import KafkaProducerService
 
-
-# Keep the router structure simple.
-# The routes below intentionally match the Nehemiah tutorial.
-router = APIRouter(prefix="/api")
+from sqlmodel import Session
 
 
-# ============================================================
-# Dependency Layer
-# ============================================================
+logger = get_app_logger(__name__)
+
+router = APIRouter()
 
 
-def get_search_flights_use_case():
-    """
-    Tutorial-compatible dependency name.
-
-    In the original Nehemiah implementation this would return
-    a SearchFlights use case backed by AmadeusSearchGateway.
-
-    Here we use Travelpayouts instead.
-    """
-    return search_flights
+def get_kafka_producer() -> KafkaProducerService:
+    return KafkaProducerService()
 
 
-def get_confirm_flight_price_use_case():
-    """
-    Tutorial-compatible dependency name.
+def get_search_flights_use_case() -> SearchFlights:
+    return SearchFlights(
+        provider=DuffelSearchGateway(duffel_flight_service),
+        cache=redis_cache,
+    )
 
-    Travelpayouts does not require the same Amadeus-style
-    flight-offer pricing confirmation flow, so the endpoint
-    can remain available without pretending that Travelpayouts
-    has the exact same API.
-    """
-    return search_flights
+
+# def get_confirm_flight_price_use_case() -> ConfirmFlightPrice:
+#     return ConfirmFlightPrice(
+#         provider=DuffelPricingGateway(duffel_flight_service),
+#     )
 
 
 def get_create_flight_order_use_case(
     session: Session = Depends(get_session),
-):
-    """
-    Tutorial-compatible dependency name.
+) -> CreateFlightOrder:
+    kafka_producer = KafkaProducerService()
 
-    Returns the local order creator together with the DB session.
-    """
-    return create_order
-
-
-def get_booking_details_use_case(
-    session: Session = Depends(get_session),
-):
-    """
-    Tutorial-compatible dependency name.
-
-    Booking details are currently retrieved from our local DB.
-    """
-    return session
+    return CreateFlightOrder(
+        order_provider=DuffelFlightOrderGateway(duffel_flight_service),
+        booking_repository=SqlModelBookingRepository(session),
+        booking_cache=RedisUserBookingCache(async_redis),
+        event_publisher=KafkaBookingEventPublisher(kafka_producer),
+    )
 
 
-def get_cancel_booking_use_case(
-    session: Session = Depends(get_session),
-):
-    """
-    Tutorial-compatible dependency name.
-
-    Travelpayouts is being used for flight search.
-    Cancellation is therefore handled locally for now.
-    """
-    return session
+# def get_booking_details_use_case(
+#     session: Session = Depends(get_session),
+# ) -> GetBookingDetails:
+#     return GetBookingDetails(
+#         booking_repository=SqlModelBookingRepository(session),
+#         presenter=BookingSuccessPresenter(),
+#     )
 
 
-def get_seat_map_use_case(
-    session: Session = Depends(get_session),
-):
-    """
-    Tutorial-compatible dependency name.
-
-    Travelpayouts does not provide the same seat-map API
-    used by the original Amadeus implementation.
-    """
-    return session
-
-
-def get_seat_map_from_flight_offer_use_case():
-    """
-    Tutorial-compatible dependency name.
-
-    Kept so the tutorial structure remains familiar.
-    """
-    return search_flights
+# def get_cancel_booking_use_case(
+#     session: Session = Depends(get_session),
+# ) -> CancelBooking:
+#     return CancelBooking(
+#         booking_repository=SqlModelBookingRepository(session),
+#         booking_cancellation_provider=DuffelFlightOrderCancellationGateway(
+#             duffel_flight_service
+#         ),
+#         booking_cache=RedisUserBookingCache(redis_cache),
+#         event_publisher=KafkaBookingEventPublisher(kafka_producer),
+#     )
 
 
-def get_location_search_use_case():
-    """
-    Tutorial-compatible dependency name.
-
-    Travelpayouts search is used as the external flight provider.
-    """
-    return search_flights
-
-
-def get_travelled_destinations_use_case():
-    """
-    Tutorial-compatible dependency name.
-
-    Travel analytics are not currently provided by Travelpayouts.
-    """
-    return None
+# def get_seat_map_use_case(
+#     session: Session = Depends(get_session),
+# ) -> GetSeatMap:
+#     return GetSeatMap(
+#         booking_repository=SqlModelBookingRepository(session),
+#         seat_map_provider=DuffelSeatMapGateway(duffel_flight_service),
+#     )
 
 
-def get_user_bookings_use_case(
-    session: Session = Depends(get_session),
-):
-    """
-    Tutorial-compatible dependency name.
-    """
-    return session
+# def get_seat_map_from_flight_offer_use_case() -> GetSeatMapFromFlightOffer:
+#     return GetSeatMapFromFlightOffer(
+#         seat_map_provider=DuffelSeatMapGateway(duffel_flight_service),
+#     )
 
 
-# ============================================================
-# GET /shopping/flight-offers
-# ============================================================
-#
-# IMPORTANT:
-# This route is intentionally identical to the Nehemiah route.
-#
-# Original:
-# @router.get("/shopping/flight-offers")
-#
-# Provider underneath:
-# Travelpayouts
-#
-# ============================================================
+# def get_location_search_use_case() -> SearchLocations:
+#     return SearchLocations(
+#         provider=DuffelLocationSearchGateway(duffel_flight_service),
+#         cache=redis_cache,
+#     )
+
+
+# def get_user_bookings_use_case(
+#     session: Session = Depends(get_session),
+# ) -> GetUserBookings:
+#     return GetUserBookings(
+#         booking_repository=SqlModelBookingRepository(session),
+#         cache=RedisUserBookingCache(redis_cache),
+#     )
 
 
 @router.get("/shopping/flight-offers")
 async def search_flights_get(
-    request: Annotated[FlightSearch, Query()],
-    search_flights_use_case=Depends(get_search_flights_use_case),
+    request: Annotated[FlightSearchRequestGet, Query()],
+    search_flights_use_case: SearchFlights = Depends(get_search_flights_use_case),
 ):
-    """
-    Search for flights.
-
-    The route/function name follows the Nehemiah tutorial,
-    while Travelpayouts is used underneath.
-    """
-    request_body = request.model_dump(exclude_none=True)
-    print(request_body)
-    # key, value
-    key = f"flights:{json.dumps(request_body, sort_keys=True, default=str)}"
-    print(key)
-    cached_result = redis_cache.get(key)
-
-    if cached_result:
-        logger.info("Returning cached flight results")
-        return cached_result
     try:
-        # Travelpayouts provider call
-        api_response = await search_flights_use_case(
-            origin=request.origin,
-            destination=request.destination,
-            departure_date=request.departure_date,
-            currency=request.currency,
-            limit=request.limit,
+        return search_flights_use_case.execute(request.model_dump(exclude_none=True))
+
+    except InvalidFlightSearchRequest:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid request parameters",
         )
 
-        if not api_response.get("success", False):
-            raise HTTPException(
-                status_code=502,
-                detail="Travel provider failed",
-            )
-
-        flights = api_response.get("data", [])
-
-        formatted = []
-
-        for flight in flights:
-            # ------------------------------------------------
-            # Direct flight filter
-            # ------------------------------------------------
-
-            if request.direct_only and flight.get("transfers", 0) > 0:
-                continue
-
-            formatted.append(
-                {
-                    "flight_number": flight.get("flight_number"),
-                    "airline": flight.get("airline"),
-                    "origin": flight.get("origin"),
-                    "destination": flight.get("destination"),
-                    "departure_at": flight.get("departure_at"),
-                    "duration": flight.get("duration"),
-                    "transfers": flight.get(
-                        "transfers",
-                        0,
-                    ),
-                    "gate": flight.get("gate"),
-                    "booking_link": flight.get("link"),
-                    "price": flight.get("price"),
-                }
-            )
-
-        # ----------------------------------------------------
-        # Sorting
-        # ----------------------------------------------------
-
-        if request.sort_by == "price":
-            formatted.sort(
-                key=lambda x: (x["price"] if x["price"] is not None else 999999)
-            )
-
-        elif request.sort_by == "duration":
-            formatted.sort(
-                key=lambda x: (x["duration"] if x["duration"] is not None else 999999)
-            )
-
-        elif request.sort_by == "departure":
-            formatted.sort(
-                key=lambda x: (
-                    x["departure_at"] if x["departure_at"] is not None else ""
-                )
-            )
-
-        # ----------------------------------------------------
-        # Return the same general structure used by the app
-        # ----------------------------------------------------
-
-        # return {
-        #     "success": api_response.get("success"),
-        #     "currency": api_response.get("currency"),
-        #     "count": len(formatted),
-        #     "flights": formatted,
-        # }
-        response = {
-            "success": api_response.get("success"),
-            "currency": api_response.get("currency"),
-            "count": len(formatted),
-            "flights": formatted,
-        }
-
-        redis_cache.set(
-            key,
-            response,
-            expiration_seconds=300,
+    except FlightSearchProviderError:
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred while searching for flights",
         )
-
-        return response
-
-    except HTTPException:
-        raise
 
     except Exception:
-        logger.exception("Flight search failed")
+        logger.exception("Unexpected error while searching for flights")
 
         raise HTTPException(
             status_code=500,
-            detail=("An error occurred while searching for flights"),
+            detail="An error occurred while searching for flights",
         )
 
 
-# ============================================================
-# POST /shopping/flight-offers/pricing
-# ============================================================
+# @router.post(
+#     "/shopping/flight-offers/pricing",
+#     response_model=FlightPricingResponse,
+# )
+# async def confirm_price(
+#     request: FlightOffer,
+#     confirm_flight_price_use_case: ConfirmFlightPrice = Depends(
+#         get_confirm_flight_price_use_case
+#     ),
+# ):
+#     try:
+#         return confirm_flight_price_use_case.execute(
+#             request.model_dump()
+#         )
 #
-# KEEPING THE TUTORIAL ROUTE.
+#     except InvalidFlightPricingRequest:
+#         raise HTTPException(
+#             status_code=400,
+#             detail="Invalid pricing request",
+#         )
 #
-# Travelpayouts does not need to be forced into the exact
-# Amadeus pricing-confirmation architecture.
+#     except FlightPricingProviderError:
+#         raise HTTPException(
+#             status_code=500,
+#             detail="An error occurred while confirming flight pricing",
+#         )
 #
-# ============================================================
-
-
-@router.post("/shopping/flight-offers/pricing")
-async def confirm_price(
-    request: FlightOffer,
-    confirm_flight_price_use_case=Depends(get_confirm_flight_price_use_case),
-):
-    """
-    Confirm flight pricing.
-
-    Kept with the same tutorial route/function name.
-
-    Travelpayouts search results are treated as the current
-    price information rather than implementing the Amadeus
-    Flight Offers Pricing API.
-    """
-
-    try:
-        # If the selected flight already contains a price,
-        # return it as the confirmed price.
-
-        return {
-            "success": True,
-            "message": "Flight price confirmed",
-            "data": request,
-        }
-
-    except Exception:
-        logger.exception("Flight pricing confirmation failed")
-
-        raise HTTPException(
-            status_code=500,
-            detail=("An error occurred while confirming flight pricing"),
-        )
-
-
-# ============================================================
-# POST /booking/flight-orders
-# ============================================================
+#     except Exception:
+#         logger.exception(
+#             "Unexpected error while confirming flight pricing"
+#         )
 #
-# SAME ROUTE AS NEHEMIAH
-#
-# ============================================================
+#         raise HTTPException(
+#             status_code=500,
+#             detail="An error occurred while confirming flight pricing",
+#         )
 
 
 @router.post(
@@ -344,846 +277,408 @@ async def confirm_price(
     response_model=BookingResponse,
 )
 async def flight_order(
-    request: FlightOrderRequest,
+    request: FlightOrderRequestBody,
     current_user: UserInDB = Depends(get_current_user),
-    session: Session = Depends(get_session),
+    create_flight_order_use_case: CreateFlightOrder = Depends(
+        get_create_flight_order_use_case
+    ),
 ):
-    """
-    Create a FlyingBee flight booking.
-
-    The selected flight and traveler information are stored
-    together as a local booking.
-
-    Travelpayouts provides the flight information and booking
-    link. FlyingBee owns the local booking record.
-    """
-
-    logger.info(
-        "Flight order creation initiated by user_id=%s",
-        current_user.id,
-    )
+    logger.info(f"Flight order creation initiated by user_id: {current_user.id}")
 
     try:
-        # ----------------------------------------------------
-        # 1. Create the flight order
-        # ----------------------------------------------------
-
-        order = FlightOrder(
+        # booking = create_flight_order_use_case.execute(
+        #     user_id=current_user.id,
+        #     user_email=current_user.email,
+        #     order_request=request.model_dump(by_alias=True),
+        # )
+        booking = await create_flight_order_use_case.execute(
             user_id=current_user.id,
-            flight_number=request.flight_number,
-            airline=request.airline,
-            origin=request.origin,
-            destination=request.destination,
-            departure_at=request.departure_at,
-            price=request.price,
-            currency=request.currency,
-            booking_link=request.booking_link,
-            status="CREATED",
+            user_email=current_user.email,
+            # order_request=request.model_dump(
+            #     mode="json",
+            #     by_alias=True,
+            # ),
+            order_request=request.model_dump(
+                mode="json",
+                by_alias=True,
+                exclude_none=True,
+            ),
         )
 
-        # ----------------------------------------------------
-        # 2. Create traveler records
-        # ----------------------------------------------------
-
-        for traveler_data in request.travelers:
-            traveler = Traveler(
-                first_name=traveler_data.first_name,
-                last_name=traveler_data.last_name,
-                date_of_birth=traveler_data.date_of_birth,
-                gender=traveler_data.gender,
-                email=traveler_data.email,
-                phone=traveler_data.phone,
-                passport_number=traveler_data.passport_number,
-                passport_expiry=traveler_data.passport_expiry,
-                passport_country=traveler_data.passport_country,
-            )
-
-            order.travelers.append(traveler)
-
-        # ----------------------------------------------------
-        # 3. Save order + travelers
-        # ----------------------------------------------------
-
-        session.add(order)
-
-        session.flush()
-
-        # -----------------------------------------
-        # 4. Create application Booking
-        # -----------------------------------------
-
-        booking = Booking(
-            user_id=current_user.id,
-            flight_order_id=order.id,
-            status="CONFIRMED",
+        response = BookingResponse(
+            id=booking.id,
+            flight_order_id=booking.flight_order_id,
+            status=booking.status,
         )
-
-        session.add(booking)
-
-        # -----------------------------------------
-        # 5. Commit everything together
-        # -----------------------------------------
-
-        session.commit()
-
-        session.refresh(order)
-        session.refresh(booking)
 
         logger.info(
-            "Booking created successfully: user_id=%s booking_id=%s flight_order_id=%s",
-            current_user.id,
-            booking.id,
-            order.id,
+            f"Booking record saved successfully for user_id: "
+            f"{current_user.id}, "
+            f"flight_order_id: {booking.flight_order_id}"
         )
 
-        return BookingResponse(
-            id=str(booking.id),
-            flight_order_id=str(order.id),
-            status=booking.status,
-            message="Flight booking created successfully",
+        return response
+
+    except InvalidFlightOrderRequest as e:
+        logger.warning(
+            f"Invalid flight order request for user_id: {current_user.id}: {str(e)}"
         )
 
-    except Exception:
-        session.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
 
+    except FlightOrderProviderError:
         logger.exception(
-            "Flight booking creation failed for user_id=%s",
-            current_user.id,
+            f"Duffel provider error during order creation "
+            f"for user_id: {current_user.id}"
         )
 
         raise HTTPException(
             status_code=500,
-            detail=("An unexpected error occurred while creating the flight booking"),
+            detail=(
+                "An unexpected error occurred while creating "
+                "the flight order. Please try again."
+            ),
         )
-
-    #     session.commit()
-
-    #     session.refresh(order)
-
-    #     logger.info(
-    #         "Flight order created successfully: %s",
-    #         order.id,
-    #     )
-
-    #     # ----------------------------------------------------
-    #     # 4. Return booking information
-    #     # ----------------------------------------------------
-
-    #     return FlightOrderResponse(
-    #         order_id=str(order.id),
-    #         status=order.status,
-    #         message="Flight booking created successfully",
-    #         travelers_count=len(order.travelers),
-    #     )
-
-    # except Exception:
-    #     session.rollback()
-
-    #     logger.exception(
-    #         "Flight order creation failed",
-    #     )
-
-    #     raise HTTPException(
-    #         status_code=500,
-    #         detail="An unexpected error occurred while creating the flight booking",
-    #     )
-
-
-# ============================================================
-# GET /shopping/seatmaps
-# ============================================================
-#
-# SAME ROUTE AS NEHEMIAH
-#
-# Travelpayouts does not provide the same seat-map capability,
-# so we keep the route for tutorial compatibility.
-#
-# ============================================================
-
-
-@router.get("/shopping/seatmaps")
-async def view_seat_map_get(
-    flight_order_reference: Annotated[
-        str,
-        Query(alias="flightorderId"),
-    ],
-    session: Session = Depends(get_session),
-):
-    """
-    Retrieve seat map.
-
-    Travelpayouts does not expose the same Amadeus seat-map
-    endpoint, so this remains a compatibility endpoint.
-    """
-
-    raise HTTPException(
-        status_code=501,
-        detail=(
-            "Seat map retrieval is not currently "
-            "supported by the Travelpayouts provider"
-        ),
-    )
-
-
-# ============================================================
-# POST /shopping/seatmaps
-# ============================================================
-
-
-@router.post("/shopping/seatmaps")
-async def view_seat_map_post(
-    request: dict,
-):
-    """
-    Retrieve a seat map from a flight offer.
-
-    Kept for compatibility with the Nehemiah API structure.
-    """
-
-    raise HTTPException(
-        status_code=501,
-        detail=(
-            "Seat map retrieval is not currently "
-            "supported by the Travelpayouts provider"
-        ),
-    )
-
-
-# ============================================================
-# GET /booking/flight-orders/{booking_id}
-# ============================================================
-
-
-@router.get("/booking/flight-orders/{booking_id}")
-async def get_booking_details(
-    booking_id: str,
-    current_user: UserInDB = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
-    """
-    Get a booking including its traveler information.
-    """
-
-    try:
-        from uuid import UUID
-
-        from sqlmodel import select
-
-        # ----------------------------------------------------
-        # Validate booking ID
-        # ----------------------------------------------------
-
-        try:
-            booking_uuid = UUID(booking_id)
-
-        except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid booking ID format",
-            )
-
-        # ----------------------------------------------------
-        # Get flight order
-        # ----------------------------------------------------
-
-        order = session.exec(
-            select(FlightOrder).where(
-                FlightOrder.id == booking_uuid,
-                FlightOrder.user_id == current_user.id,
-            )
-        ).first()
-
-        if not order:
-            raise HTTPException(
-                status_code=404,
-                detail="Booking not found",
-            )
-
-        # ----------------------------------------------------
-        # Get travelers belonging to this order
-        # ----------------------------------------------------
-
-        travelers = session.exec(
-            select(Traveler).where(Traveler.order_id == booking_uuid)
-        ).all()
-
-        # ----------------------------------------------------
-        # Format travelers
-        # ----------------------------------------------------
-
-        traveler_data = [
-            {
-                "id": str(traveler.id),
-                "first_name": traveler.first_name,
-                "last_name": traveler.last_name,
-                "date_of_birth": traveler.date_of_birth,
-                "gender": traveler.gender,
-                "email": traveler.email,
-                "phone": traveler.phone,
-                "passport_number": traveler.passport_number,
-                "passport_expiry": traveler.passport_expiry,
-                "passport_country": traveler.passport_country,
-            }
-            for traveler in travelers
-        ]
-
-        # ----------------------------------------------------
-        # Return booking + travelers
-        # ----------------------------------------------------
-
-        return {
-            "id": str(order.id),
-            "flight_number": order.flight_number,
-            "airline": order.airline,
-            "origin": order.origin,
-            "destination": order.destination,
-            "departure_at": order.departure_at,
-            "price": order.price,
-            "currency": order.currency,
-            "booking_link": order.booking_link,
-            "status": order.status,
-            "created_at": order.created_at,
-            "travelers": traveler_data,
-        }
-
-    except HTTPException:
-        raise
 
     except Exception:
-        logger.exception("Error fetching booking details")
+        logger.exception(
+            f"Unexpected error during flight order creation "
+            f"for user_id: {current_user.id}"
+        )
 
         raise HTTPException(
             status_code=500,
-            detail="An error occurred while retrieving booking details",
+            detail=(
+                "An unexpected error occurred while creating "
+                "the flight order. Please try again."
+            ),
         )
 
 
-# ============================================================
-# DELETE /booking/flight-orders/{booking_id}
-# ============================================================
-
-
-@router.delete("/booking/flight-orders/{booking_id}")
-async def cancel_booking(
-    booking_id: str,
-    current_user: UserInDB = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
-    """
-    Cancel a local booking.
-
-    Travelpayouts is not being treated as an Amadeus-style
-    order-management provider here.
-    """
-
-    try:
-        from uuid import UUID
-        from sqlmodel import select
-
-        try:
-            booking_uuid = UUID(booking_id)
-
-        except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid booking ID format",
-            )
-
-        order = session.exec(
-            select(FlightOrder).where(
-                FlightOrder.id == booking_uuid,
-                FlightOrder.user_id == current_user.id,
-            )
-        ).first()
-
-        if not order:
-            raise HTTPException(
-                status_code=404,
-                detail="Booking not found",
-            )
-
-        if order.status == "CANCELLED":
-            raise HTTPException(
-                status_code=400,
-                detail=("This booking has already been cancelled"),
-            )
-
-        order.status = "CANCELLED"
-
-        session.add(order)
-        session.commit()
-        session.refresh(order)
-
-        return {
-            "id": str(order.id),
-            "status": order.status,
-            "message": "Booking cancelled successfully",
-        }
-
-    except HTTPException:
-        raise
-
-    except Exception:
-        logger.exception("Error cancelling booking")
-
-        raise HTTPException(
-            status_code=500,
-            detail=("An error occurred while cancelling the booking"),
-        )
-
-
-# ============================================================
-# GET /reference-data/locations
-# ============================================================
-#
-# SAME TUTORIAL ROUTE
-#
-# ============================================================
-
-
-@router.get("/reference-data/locations")
-async def search_locations(
-    keyword: str = Query(...),
-):
-    """
-    Location search.
-
-    Kept under the same route used by the tutorial.
-
-    Implement the Travelpayouts location endpoint here when
-    needed. For now, this keeps the API contract in place.
-    """
-
-    raise HTTPException(
-        status_code=501,
-        detail=(
-            "Location search is not currently "
-            "implemented for the Travelpayouts provider"
-        ),
-    )
-
-
-# ============================================================
-# GET /bookings
-# ============================================================
-
-
-@router.get("/bookings")
-async def get_user_bookings(
-    session: Session = Depends(get_session),
-    current_user: UserInDB = Depends(get_current_user),
-    cursor: str | None = Query(
-        None,
-        description="Cursor for pagination",
-    ),
-    limit: int = Query(
-        20,
-        ge=1,
-        le=100,
-        description=("Maximum number of records to return"),
-    ),
-    include_count: bool = Query(
-        False,
-        description=("Include total_count in response"),
-    ),
-):
-    """
-    Get user's bookings.
-
-    Kept with the same tutorial route.
-    """
-
-    try:
-        from sqlmodel import select
-
-        statement = (
-            select(FlightOrder)
-            .where(FlightOrder.user_id == current_user.id)
-            .order_by(FlightOrder.id.desc())
-            .limit(limit)
-        )
-
-        orders = session.exec(statement).all()
-
-        items = [
-            {
-                "id": str(order.id),
-                "pnr": None,
-                "status": order.status,
-                "created_at": getattr(
-                    order,
-                    "created_at",
-                    None,
-                ),
-                "ticket_url": order.booking_link,
-            }
-            for order in orders
-        ]
-
-        return {
-            "items": items,
-            "next_cursor": None,
-            "has_more": False,
-            "has_previous": False,
-            "total_count": (len(items) if include_count else None),
-            "limit": limit,
-        }
-
-    except Exception:
-        logger.exception("Error fetching bookings")
-
-        raise HTTPException(
-            status_code=500,
-            detail=("An error occurred while fetching bookings"),
-        )
-
-
-# ============================================================
-# GET /analytics/most-travelled-destinations
-# ============================================================
-#
-# SAME TUTORIAL ROUTE
-#
-# ============================================================
-
-
-@router.get("/analytics/most-travelled-destinations")
-def get_most_travelled_destinations(
-    origin_city_code: str,
-    period: str,
-):
-    """
-    Travel analytics endpoint.
-
-    Travelpayouts is being used for flight search and does not
-    provide the same Amadeus travel-analytics endpoint.
-
-    Route is retained so the tutorial/frontend structure
-    remains consistent.
-    """
-
-    raise HTTPException(
-        status_code=501,
-        detail=(
-            "Travel analytics are not currently supported by the Travelpayouts provider"
-        ),
-    )
-
-
-# from fastapi import APIRouter, Depends, HTTPException
-# from sqlmodel import Session
-
-# from backend.schemas.flights import FlightSearch
-# from backend.external_services.travelpayouts import search_flights
-# from backend.crud.database import get_session
-# from backend.crud.flights import save_search
-
-# from backend.schemas.orders import (
-#     FlightOrderRequest,
-#     FlightOrderResponse
-# )
-
-# from backend.models.orders import FlightOrder
-
-# from backend.crud.orders import create_order
-
-# # Future:
-# # from backend.external_services.cache import redis_cache
-# # from backend.utils.kafka import kafka_producer
-
-# import logging
-
-# logger = logging.getLogger(__name__)
-
-
-# router = APIRouter(prefix="/api")
-
-
-# # -------------------------------
-# # Dependency Layer
-# # -------------------------------
-
-# def get_flight_search_provider():
-#     return search_flights
-
-# def get_order_creator():
-#     return create_order
-
-
-# # Future:
-# # def get_cache():
-# #     return redis_cache
-
-
-# # def get_event_publisher():
-# #     return kafka_producer
-
-
-# # -------------------------------
-# # Search Flights
-# # -------------------------------
-
-# @router.post("/flights/search")
-# async def search(
-#     request: FlightSearch,
-#     session: Session = Depends(get_session),
-#     flight_provider=Depends(get_flight_search_provider),
+# @router.get("/shopping/seatmaps")
+# async def view_seat_map_get(
+#     flight_order_reference: Annotated[str, Query(alias="flightorderId")],
+#     current_user: UserInDB = Depends(get_current_user),
+#     seat_map_use_case: GetSeatMap = Depends(get_seat_map_use_case),
 # ):
-
 #     try:
-
-#         # Save search history
-#         save_search(
-#             session,
-#             request
+#         return seat_map_use_case.execute(
+#             flight_order_reference=flight_order_reference,
+#             user_id=current_user.id,
 #         )
-
-
-#         # Future Redis caching
-#         # cached_result = redis_cache.get(request)
-#         # if cached_result:
-#         #     return cached_result
-
-
-#         api_response = await flight_provider(
-#             origin=request.origin,
-#             destination=request.destination,
-#             departure_date=request.departure_date,
-#             currency=request.currency,
-#             limit=request.limit,
+#
+#     except SeatMapBookingNotFound:
+#         raise HTTPException(
+#             status_code=404,
+#             detail="Booking not found or access denied",
 #         )
-
-
-#         if not api_response.get("success", False):
-
-#             raise HTTPException(
-#                 status_code=502,
-#                 detail="Travel provider failed"
-#             )
-
-
-#         flights = api_response.get(
-#             "data",
-#             []
+#
+#     except InvalidSeatMapRequest as e:
+#         raise HTTPException(
+#             status_code=400,
+#             detail=str(e),
 #         )
-
-
-#         formatted = []
-
-
-#         for flight in flights:
-
-
-#             # direct flight filter
-#             if (
-#                 request.direct_only
-#                 and flight.get("transfers",0) > 0
-#             ):
-#                 continue
-
-
-#             formatted.append(
-#                 {
-#                     "flight_number":
-#                         flight.get("flight_number"),
-
-
-#                     "airline":
-#                         flight.get("airline"),
-
-
-#                     "origin":
-#                         flight.get("origin"),
-
-
-#                     "destination":
-#                         flight.get("destination"),
-
-
-#                     "departure_at":
-#                         flight.get("departure_at"),
-
-
-#                     "duration":
-#                         flight.get("duration"),
-
-
-#                     "transfers":
-#                         flight.get("transfers",0),
-
-
-#                     "gate":
-#                         flight.get("gate"),
-
-
-#                     "booking_link":
-#                         flight.get("link"),
-
-
-#                     "price":
-#                         flight.get("price"),
-#                 }
-#             )
-
-
-#         # sorting
-
-#         if request.sort_by == "price":
-
-#             formatted.sort(
-#                 key=lambda x:x["price"] or 999999
-#             )
-
-
-#         elif request.sort_by=="duration":
-
-#             formatted.sort(
-#                 key=lambda x:x["duration"] or 999999
-#             )
-
-
-#         elif request.sort_by=="departure":
-
-#             formatted.sort(
-#                 key=lambda x:x["departure_at"]
-#             )
-
-
-#         response = {
-
-#             "success":
-#                 api_response.get("success"),
-
-
-#             "currency":
-#                 api_response.get("currency"),
-
-
-#             "count":
-#                 len(formatted),
-
-
-#             "flights":
-#                 formatted
-#         }
-
-
-#         # Future Kafka event
-#         #
-#         # kafka_producer.publish(
-#         #     "flight.search.completed",
-#         #     response
-#         # )
-
-
-#         return response
-
-
+#
+#     except SeatMapProviderError:
+#         raise HTTPException(
+#             status_code=500,
+#             detail="Failed to retrieve seat map",
+#         )
+#
 #     except HTTPException:
-
 #         raise
-
-
-#     except Exception as e:
-
+#
+#     except Exception:
 #         logger.exception(
-#             "Flight search failed"
+#             f"Failed to retrieve seat map for ID: "
+#             f"{flight_order_reference}"
 #         )
-
+#
 #         raise HTTPException(
 #             status_code=500,
-#             detail=str(e)
+#             detail="Failed to retrieve seat map",
 #         )
 
 
-# @router.get("/flights")
-# async def get_flights():
-
-#     return {
-#         "message":"FlyingBee Flight API"
-#     }
-
-# # --------------------------------
-# # Create Flight Order
-# # --------------------------------
-
-# @router.post(
-#     "/flights/orders",
-#     response_model=FlightOrderResponse
-# )
-# async def create_flight_order(
-#     request: FlightOrderRequest,
-#     session: Session = Depends(get_session),
+# @router.post("/shopping/seatmaps")
+# async def view_seat_map_post(
+#     request: FlightOffer,
+#     seat_map_from_offer_use_case: GetSeatMapFromFlightOffer = Depends(
+#         get_seat_map_from_flight_offer_use_case
+#     ),
 # ):
-
 #     try:
-
-#         order = FlightOrder(
-
-#             flight_number=request.flight_number,
-
-#             airline=request.airline,
-
-#             origin=request.origin,
-
-#             destination=request.destination,
-
-#             departure_at=request.departure_at,
-
-#             price=request.price,
-
-#             currency=request.currency,
-
-#             booking_link=request.booking_link,
-
-#             status="CREATED"
+#         return seat_map_from_offer_use_case.execute(
+#             request.model_dump()
 #         )
-
-
-#         saved_order = create_order(
-#             session,
-#             order
-#         )
-
-
-#         # Future Kafka
-#         #
-#         # kafka_producer.publish(
-#         #     "flight.order.created",
-#         #     {
-#         #        "order_id": str(saved_order.id)
-#         #     }
-#         # )
-
-
-#         return {
-
-#             "order_id":
-#                 str(saved_order.id),
-
-#             "status":
-#                 saved_order.status,
-
-#             "message":
-#                 "Flight order created successfully"
-#         }
-
-
-#     except Exception as e:
-
-#         logger.exception(
-#             "Flight order creation failed"
-#         )
-
-
+#
+#     except InvalidSeatMapOfferRequest as e:
 #         raise HTTPException(
-
+#             status_code=400,
+#             detail=str(e),
+#         )
+#
+#     except SeatMapFromOfferProviderError:
+#         raise HTTPException(
 #             status_code=500,
-
-#             detail=str(e)
-
+#             detail="Failed to retrieve seat map",
+#         )
+#
+#     except Exception:
+#         logger.exception(
+#             "Failed to retrieve seat map from flight offer"
+#         )
+#
+#         raise HTTPException(
+#             status_code=500,
+#             detail="Failed to retrieve seat map from flight offer",
 #         )
 
-# @router.post("/flights/price")
-# async def confirm_price():
-#         return ""
+
+# @router.get("/booking/flight-orders/{booking_id}")
+# async def get_booking_details(
+#     booking_id: str,
+#     current_user: UserInDB = Depends(get_current_user),
+#     booking_details_use_case: GetBookingDetails = Depends(
+#         get_booking_details_use_case
+#     ),
+# ):
+#     logger.info(
+#         f"Fetching booking details for booking_id: "
+#         f"{booking_id}, user_id: {current_user.id}"
+#     )
+#
+#     try:
+#         try:
+#             booking_uuid = uuid_module.UUID(booking_id)
+#
+#         except ValueError:
+#             raise HTTPException(
+#                 status_code=400,
+#                 detail="Invalid booking ID format",
+#             )
+#
+#         booking_details = booking_details_use_case.execute(
+#             booking_id=booking_uuid,
+#             user_id=current_user.id,
+#             user_email=current_user.email,
+#         )
+#
+#         logger.info(
+#             f"Successfully retrieved booking details for "
+#             f"booking_id: {booking_id}"
+#         )
+#
+#         return booking_details
+#
+#     except HTTPException:
+#         raise
+#
+#     except BookingDetailsNotFound:
+#         raise HTTPException(
+#             status_code=404,
+#             detail=(
+#                 "Booking not found or you don't have permission "
+#                 "to access it"
+#             ),
+#         )
+#
+#     except Exception:
+#         logger.exception(
+#             f"Error fetching booking details for booking_id: "
+#             f"{booking_id}"
+#         )
+#
+#         raise HTTPException(
+#             status_code=500,
+#             detail=(
+#                 "An error occurred while retrieving "
+#                 "the booking details"
+#             ),
+#         )
+
+
+# @router.delete("/booking/flight-orders/{booking_id}")
+# async def cancel_booking(
+#     booking_id: str,
+#     current_user: UserInDB = Depends(get_current_user),
+#     cancel_booking_use_case: CancelBooking = Depends(
+#         get_cancel_booking_use_case
+#     ),
+# ):
+#     logger.info(
+#         f"Booking cancellation initiated for booking_id: "
+#         f"{booking_id}, user_id: {current_user.id}"
+#     )
+#
+#     try:
+#         try:
+#             booking_uuid = uuid_module.UUID(booking_id)
+#
+#         except ValueError:
+#             raise HTTPException(
+#                 status_code=400,
+#                 detail="Invalid booking ID format",
+#             )
+#
+#         cancelled_booking = cancel_booking_use_case.execute(
+#             command=CancelBookingCommand(
+#                 booking_id=booking_uuid,
+#                 user_id=current_user.id,
+#                 user_email=current_user.email,
+#             )
+#         )
+#
+#         return BookingCancellationResponse(
+#             id=cancelled_booking.id,
+#             status=cancelled_booking.status,
+#             message=cancelled_booking.message,
+#         )
+#
+#     except BookingNotFound:
+#         raise HTTPException(
+#             status_code=404,
+#             detail=(
+#                 "Booking not found or you don't have permission "
+#                 "to cancel it"
+#             ),
+#         )
+#
+#     except BookingAlreadyCancelled:
+#         raise HTTPException(
+#             status_code=400,
+#             detail="This booking has already been cancelled",
+#         )
+#
+#     except BookingCannotBeCancelled:
+#         raise HTTPException(
+#             status_code=400,
+#             detail=(
+#                 "Booking with status 'reversed', 'failed', "
+#                 "or 'refunded' cannot be cancelled"
+#             ),
+#         )
+#
+#     except HTTPException:
+#         raise
+#
+#     except Exception:
+#         logger.exception(
+#             f"Error cancelling booking for booking_id: "
+#             f"{booking_id}, user_id: {current_user.id}"
+#         )
+#
+#         raise HTTPException(
+#             status_code=500,
+#             detail="An error occurred while cancelling the booking",
+#         )
+
+
+# @router.get(
+#     "/reference-data/locations",
+#     response_model=list[LocationSearchResponse],
+# )
+# async def search_locations(
+#     request: Annotated[LocationSearchRequest, Query()],
+#     location_search_use_case: SearchLocations = Depends(
+#         get_location_search_use_case
+#     ),
+# ):
+#     try:
+#         return location_search_use_case.execute(
+#             request.model_dump()
+#         )
+#
+#     except InvalidLocationSearchRequest:
+#         raise HTTPException(
+#             status_code=400,
+#             detail="Invalid location search request",
+#         )
+#
+#     except LocationSearchProviderError:
+#         raise HTTPException(
+#             status_code=500,
+#             detail="An error occurred while searching for a location",
+#         )
+#
+#     except Exception:
+#         logger.exception(
+#             "Unexpected error while searching for a location"
+#         )
+#
+#         raise HTTPException(
+#             status_code=500,
+#             detail="An error occurred while searching for a location",
+#         )
+
+
+# @router.get(
+#     "/bookings",
+#     response_model=CursorPaginatedUserBookingResponse,
+# )
+# async def get_user_bookings(
+#     cursor: str | None = Query(
+#         None,
+#         description="Cursor for pagination",
+#     ),
+#     limit: int = Query(
+#         20,
+#         ge=1,
+#         le=MAX_PAGINATION_LIMIT,
+#         description="Maximum number of records to return",
+#     ),
+#     include_count: bool = Query(
+#         False,
+#         description="Include total_count in response (may be slower)",
+#     ),
+#     user: UserInDB = Depends(get_current_user),
+#     user_bookings_use_case: GetUserBookings = Depends(
+#         get_user_bookings_use_case
+#     ),
+# ):
+#     try:
+#         user_bookings_page = user_bookings_use_case.execute(
+#             user_id=user.id,
+#             cursor=cursor,
+#             limit=limit,
+#             include_count=include_count,
+#         )
+#
+#         response = CursorPaginatedUserBookingResponse(
+#             items=[
+#                 UserBookingResponse(
+#                     id=booking.id,
+#                     pnr=booking.pnr,
+#                     status=booking.status,
+#                     created_at=booking.created_at,
+#                     ticket_url=booking.ticket_url,
+#                 )
+#                 for booking in user_bookings_page.items
+#             ],
+#             next_cursor=user_bookings_page.next_cursor,
+#             has_more=user_bookings_page.has_more,
+#             has_previous=user_bookings_page.has_previous,
+#             total_count=user_bookings_page.total_count,
+#             limit=user_bookings_page.limit,
+#         )
+#
+#         logger.info(
+#             f"Successfully fetched {len(response.items)} bookings "
+#             f"for user_id: {user.id} "
+#             f"(has_more: {response.has_more})"
+#         )
+#
+#         return response
+#
+#     except Exception:
+#         logger.exception(
+#             f"Error fetching bookings for user_id: {user.id}"
+#         )
+#
+#         raise HTTPException(
+#             status_code=500,
+#             detail="An error occurred while fetching bookings",
+#         )

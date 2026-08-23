@@ -1,63 +1,63 @@
-import os
+# import os
 
-import httpx
-from dotenv import load_dotenv
-from pathlib import Path
-
-
-env_path = Path(__file__).resolve().parents[1] / ".env"
-
-load_dotenv(dotenv_path=env_path)
+# import httpx
+# from dotenv import load_dotenv
+# from pathlib import Path
 
 
-API_KEY = os.getenv("TRAVELPAYOUTS_API_KEY")
-BASE_URL = os.getenv("TRAVELPAYOUTS_BASE_URL")
+# env_path = Path(__file__).resolve().parents[1] / ".env"
+
+# load_dotenv(dotenv_path=env_path)
 
 
-async def search_flights(
-    origin: str,
-    destination: str,
-    departure_date: str,
-    currency: str,
-    limit: int,
-):
-    """
-    Search flights using the Travelpayouts / Aviasales API.
+# API_KEY = os.getenv("TRAVELPAYOUTS_API_KEY")
+# BASE_URL = os.getenv("TRAVELPAYOUTS_BASE_URL")
 
-    This function is the Travelpayouts implementation behind
-    the tutorial's SearchFlights functionality.
-    """
 
-    url = f"{BASE_URL}/aviasales/v3/prices_for_dates"
+# async def search_flights(
+#     origin: str,
+#     destination: str,
+#     departure_date: str,
+#     currency: str,
+#     limit: int,
+# ):
+#     """
+#     Search flights using the Travelpayouts / Aviasales API.
 
-    params = {
-        "origin": origin,
-        "destination": destination,
-        "departure_at": departure_date,
-        "currency": currency,
-        "sorting": "price",
-        "limit": limit,
-        "token": API_KEY,
-    }
+#     This function is the Travelpayouts implementation behind
+#     the tutorial's SearchFlights functionality.
+#     """
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.get(
-            url,
-            params=params,
-        )
+#     url = f"{BASE_URL}/aviasales/v3/prices_for_dates"
 
-    if response.status_code != 200:
-        return {
-            "success": False,
-            "error": response.text,
-        }
+#     params = {
+#         "origin": origin,
+#         "destination": destination,
+#         "departure_at": departure_date,
+#         "currency": currency,
+#         "sorting": "price",
+#         "limit": limit,
+#         "token": API_KEY,
+#     }
 
-    data = response.json()
+#     async with httpx.AsyncClient(timeout=30) as client:
+#         response = await client.get(
+#             url,
+#             params=params,
+#         )
 
-    return {
-        "success": True,
-        **data,
-    }
+#     if response.status_code != 200:
+#         return {
+#             "success": False,
+#             "error": response.text,
+#         }
+
+#     data = response.json()
+
+#     return {
+#         "success": True,
+#         **data,
+#     }
 
 
 # import os

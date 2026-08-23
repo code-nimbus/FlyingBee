@@ -1,32 +1,49 @@
-import redis
 import json
 import os
+from typing import Any
+
+import redis
 
 
 class RedisCache:
-    def __init__(self, host: str, port: int):
-        self.r = redis.Redis(host=host, port=port, db=0, decode_responses=True)
+    def __init__(
+        self,
+        redis_url: str | None = None,
+        ttl: int = 300,
+    ):
+        self.redis_url = redis_url or os.getenv(
+            "REDIS_URL",
+            "redis://redis:6379/0",
+        )
 
-    def set(self, key: str, value, expiration_seconds: int = 300):
-        try:
-            json_value = json.dumps(value)
-            self.r.setex(key, expiration_seconds, json_value)
-            print(f"Cached key:{key} for {expiration_seconds} seconds")
-        except redis.exceptions.ConnectionError as e:
-            print(f"Redis connection error:{e}")
+        self.ttl = ttl
 
-    def get(self, key: str):
-        try:
-            json_value = self.r.get(key)
-            if json_value:
-                print(f"Cache for key: {key}, value:{json_value}")
-                return json.loads(json_value)
-            print(f"Cache miss for key:{key}")
+        self.client = redis.Redis.from_url(
+            self.redis_url,
+            decode_responses=True,
+        )
+
+    def get(
+        self,
+        key: str,
+    ) -> list[dict[str, Any]] | None:
+        value = self.client.get(key)
+
+        if value is None:
             return None
-        except redis.exceptions.ConnectionError as e:
-            print(f"Redis connection error:{e}")
+
+        return json.loads(value)
+
+    def set(
+        self,
+        key: str,
+        value: list[dict[str, Any]],
+    ) -> None:
+        self.client.setex(
+            key,
+            self.ttl,
+            json.dumps(value),
+        )
 
 
-host = os.getenv("REDIS_HOST", "redis")
-port = int(os.getenv("REDIS_PORT", 6379))
-redis_cache = RedisCache(host, port)
+redis_cache = RedisCache()

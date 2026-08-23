@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from backend.routers import users
-from backend.crud.database import init_db
 from backend.routers import flights
 from fastapi.middleware.cors import CORSMiddleware
+from backend.crud.database import init_db
 
 
 app = FastAPI()
@@ -32,3 +32,9 @@ app.include_router(flights.router)
 @app.get("/")
 def hello():
     return {"message": "Flight Booking API"}
+
+
+class Person: ...
+
+
+john = Person()
