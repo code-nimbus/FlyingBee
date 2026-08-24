@@ -41,5 +41,5 @@ EOF
 
 # Run the docker-compose command to build and start the containers
 cd "$REPO_DIR/backend"
-docker-compose up -d --build
+docker compose up -d --build
 # fi
