@@ -4,6 +4,7 @@ variable "instance_name" {
   default     = "flyingbee-app-server"
 }
 
+
 variable "instance_type" {
   description = "The EC2 instance's name tag"
   type        = string
