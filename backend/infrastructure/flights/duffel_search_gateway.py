@@ -1,12 +1,11 @@
-from typing import Any
 import logging
+from typing import Any
 
 from backend.application.flights.search_flights import (
     FlightSearchProviderError,
     FlightSearchResult,
     InvalidFlightSearchRequest,
 )
-
 from backend.external_services.interface import FlightServiceProtocol
 
 logger = logging.getLogger(__name__)

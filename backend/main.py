@@ -1,9 +1,8 @@
 from fastapi import FastAPI
-from backend.routers import users
-from backend.routers import flights
 from fastapi.middleware.cors import CORSMiddleware
-from backend.crud.database import init_db
 
+from backend.crud.database import init_db
+from backend.routers import flights, users
 
 app = FastAPI()
 

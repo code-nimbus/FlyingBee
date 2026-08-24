@@ -1,27 +1,57 @@
-from datetime import datetime, timezone
-from typing import Optional
+# from uuid import UUID
+import uuid
+from datetime import UTC, datetime
+from enum import Enum
+from typing import TYPE_CHECKING
 
-from uuid import UUID
-from sqlmodel import Field, SQLModel
+from sqlalchemy import JSON, Column, DateTime, Index
+from sqlmodel import Field, Relationship, SQLModel
+
+if TYPE_CHECKING:
+    from .users import UserInDB
+
+
+class BookingStatus(str, Enum):
+    CONFIRMED = "confirmed"
+    PAID = "paid"
+    CANCELLED = "cancelled"
+    REVERSED = "reversed"
+    FAILED = "failed"
+    PENDING = "pending"
+    REFUNDED = "refunded"
+    REFUND_PENDING = "refund_pending"  # Awaiting merchant approval
 
 
 class Booking(SQLModel, table=True):
     __tablename__ = "bookings"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
-
-    user_id: UUID
-
-    flight_order_id: str = Field(
-        index=True,
-        unique=True,
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4, primary_key=True, index=True, nullable=False
     )
 
-    status: str = Field(
-        default="confirmed",
+    user_id: uuid.UUID = Field(foreign_key="userindb.id", nullable=False)
+    flight_order_id: str = Field(nullable=False)
+
+    offer_id: str | None = Field(
+        default=None,
         index=True,
     )
 
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    status: str = Field(default=BookingStatus.CONFIRMED, nullable=False)
+    created_at: datetime = Field(
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            default=lambda: datetime.now(UTC),
+        )
+    )
+    total_price: float = Field(default=0.0, nullable=False)
+    user: "UserInDB" = Relationship(back_populates="bookings")
 
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    duffel_order_response: dict | None = Field(default=None, sa_column=Column(JSON))
+    ticket_url: str | None = Field(default=None, nullable=True)
+
+    __table_args__ = (
+        Index("ix_booking_cursor", "created_at", "id"),
+        Index("ix_booking_user_cursor", "user_id", "created_at", "id"),
+    )

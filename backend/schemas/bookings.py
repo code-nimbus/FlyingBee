@@ -1,4 +1,6 @@
+import uuid
 from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -7,7 +9,7 @@ class BookingResponse(BaseModel):
     Response returned after successfully creating a flight booking.
     """
 
-    id: int
+    id: uuid.UUID
     flight_order_id: str
     status: str
 
@@ -19,7 +21,7 @@ class UserBookingResponse(BaseModel):
     Booking information returned when fetching a user's bookings.
     """
 
-    id: int
+    id: uuid.UUID
     pnr: str | None = None
     status: str
     created_at: datetime | None = None

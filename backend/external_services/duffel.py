@@ -1,4 +1,5 @@
 import os
+
 import requests
 from dotenv import load_dotenv
 
@@ -121,45 +122,73 @@ class DuffelFlightService:
     #     except requests.exceptions.RequestException as error:
     #         raise error
 
-    # def view_seat_map_post(self, flight_offer: dict) -> dict:
-    #     try:
-    #         offer_id = flight_offer.get("id")
+    def view_seat_map_get(self, offer_id: str) -> dict:
+        try:
+            if not offer_id:
+                raise ValueError("offer id is required")
 
-    #         if not offer_id:
-    #             raise ValueError("offer id is required")
+            response = requests.get(
+                f"{self.base_url}/air/seat_maps",
+                headers=self.headers,
+                params={"offer_id": offer_id},
+                timeout=30,
+            )
 
-    #         response = requests.get(
-    #             f"{self.base_url}/air/offers/{offer_id}/seat_maps",
-    #             headers=self.headers,
-    #         )
-    #         response.raise_for_status()
+            if not response.ok:
+                logger.error(
+                    "Duffel seat map request failed | "
+                    "status=%s | response=%s | offer_id=%s",
+                    response.status_code,
+                    response.text,
+                    offer_id,
+                )
 
-    #         return response.json()
+            response.raise_for_status()
 
-    #     except requests.exceptions.RequestException as error:
-    #         raise error
+            return response.json()
 
-    # def get_flight_order(self, flight_orderId: str) -> dict:
-    #     """
-    #     Retrieves flight order details using the Duffel Orders API.
+        except requests.exceptions.RequestException as error:
+            raise error
 
-    #     Args:
-    #         flight_orderId (str): The ID of the flight order.
+    def view_seat_map_post(self, flight_offer: dict) -> dict:
+        try:
+            offer_id = flight_offer.get("id")
 
-    #     Returns:
-    #         dict: The flight order details.
-    #     """
-    #     try:
-    #         response = requests.get(
-    #             f"{self.base_url}/air/orders/{flight_orderId}",
-    #             headers=self.headers,
-    #         )
-    #         response.raise_for_status()
+            if not offer_id:
+                raise ValueError("offer id is required")
 
-    #         return response.json()
+            response = requests.get(
+                f"{self.base_url}/air/offers/{offer_id}/seat_maps",
+                headers=self.headers,
+            )
+            response.raise_for_status()
 
-    #     except requests.exceptions.RequestException as error:
-    #         raise error
+            return response.json()
+
+        except requests.exceptions.RequestException as error:
+            raise error
+
+    def get_flight_order(self, flight_orderId: str) -> dict:
+        """
+        Retrieves flight order details using the Duffel Orders API.
+
+        Args:
+            flight_orderId (str): The ID of the flight order.
+
+        Returns:
+            dict: The flight order details.
+        """
+        try:
+            response = requests.get(
+                f"{self.base_url}/air/orders/{flight_orderId}",
+                headers=self.headers,
+            )
+            response.raise_for_status()
+
+            return response.json()
+
+        except requests.exceptions.RequestException as error:
+            raise error
 
     # def create_flight_order(self, request_body: dict) -> dict:
     #     """
@@ -371,14 +400,19 @@ class DuffelFlightService:
             if not keyword:
                 raise ValueError("keyword is required")
 
-            response = requests.get(
-                f"{self.base_url}/places/suggestions",
-                headers=self.headers,
-                params={"query": keyword},
-            )
-            response.raise_for_status()
+            sub_type = request_body.get("sub_type", "ANY").upper()
 
-            return response.json()
+            response = self.duffel.get("/places/suggestions", params={"query": keyword})
+
+            results = response["data"]
+
+            if sub_type == "AIRPORT":
+                results = [place for place in results if place.get("type") == "airport"]
+
+            elif sub_type == "CITY":
+                results = [place for place in results if place.get("type") == "city"]
+
+            return results
 
         except requests.exceptions.RequestException as error:
             raise error

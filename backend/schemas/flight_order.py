@@ -1,8 +1,7 @@
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
-from pydantic import model_validator
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class IdentityDocument(BaseModel):

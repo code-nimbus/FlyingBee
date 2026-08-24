@@ -1,17 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+import os
+from datetime import timedelta
 from typing import Annotated
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
+
+from backend.crud.database import Session, get_session
+from backend.crud.users import create_user, get_user_by_email
+from backend.models.auth import Token
 
 # from models.users import UserInDB
 from backend.schemas.users import UserCreate, UserRead
-from backend.crud.users import get_user_by_email, create_user
-from backend.crud.database import Session
-from backend.crud.database import get_session
 from backend.utils.email import send_email_async
-from backend.models.auth import Token
-from fastapi.security import OAuth2PasswordRequestForm
 from backend.utils.security import authenticate_user, create_access_token
-import os
-from datetime import timedelta
 
 router = APIRouter()
 

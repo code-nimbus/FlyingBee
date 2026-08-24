@@ -76,10 +76,11 @@ class CreateFlightOrder:
             # ---------------------------------------------------------
             booking = Booking(
                 user_id=user_id,
-                user_email=user_email,
+                # user_email=user_email,
+                offer_id=offer_id,
                 flight_order_id=flight_order_id,
                 status=duffel_data.get("status", "pending"),
-                order_data=duffel_data,
+                # order_data=duffel_data,
             )
 
             # ---------------------------------------------------------
@@ -118,6 +119,15 @@ class CreateFlightOrder:
         offer_id = order_request["offer_id"]
         passengers = order_request["passengers"]
         order_type = order_request.get("type", "hold")
+
+        if not isinstance(offer_id, str) or not offer_id:
+            raise InvalidFlightOrderRequest("offer_id must be a non-empty string")
+
+        if order_type not in {
+            "hold",
+            "instant",
+        }:
+            raise InvalidFlightOrderRequest("type must be 'hold' or 'instant'")
 
         if not isinstance(passengers, list) or not passengers:
             raise InvalidFlightOrderRequest("At least one passenger is required")

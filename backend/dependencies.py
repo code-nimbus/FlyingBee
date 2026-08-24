@@ -1,17 +1,16 @@
 from typing import Annotated
 
+import jwt
 from fastapi import Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from backend.crud.database import get_session
 from backend.models.users import UserInDB
 from backend.utils.security import (
-    SECRET_KEY,
     ALGORITHM,
+    SECRET_KEY,
     authentication_scheme,
 )
-
-import jwt
 
 
 def get_current_user(

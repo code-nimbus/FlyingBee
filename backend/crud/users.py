@@ -1,4 +1,5 @@
 from sqlmodel import Session, select
+
 from backend.models.users import UserInDB
 from backend.utils.security import hash_password
 

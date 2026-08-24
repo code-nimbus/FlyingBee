@@ -1,9 +1,9 @@
-from kafka import KafkaProducer
 import json
 import os
 from typing import Any
 
 from dotenv import load_dotenv
+from kafka import KafkaProducer
 
 load_dotenv()
 
@@ -18,7 +18,7 @@ class KafkaProducerService:
         self.producer = KafkaProducer(
             bootstrap_servers=bootstrap_servers.split(","),
             value_serializer=lambda value: json.dumps(value).encode("utf-8"),
-            key_serializer=lambda key: (key.encode("utf-8") if key else None),
+            key_serializer=lambda key: key.encode("utf-8") if key else None,
             acks="all",
             retries=5,
             enable_idempotence=True,
