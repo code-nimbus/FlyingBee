@@ -43,6 +43,7 @@ jobs:
           travelpayouts_base_url = "${{ secrets.TRAVELPAYOUTS_BASE_URL }}"
           duffel_api_token = "${{ secrets.DUFFEL_API_TOKEN }}"
           EOF
+          
       - name: Terraform Plan
         run: terraform -chdir=terraform plan -out=tfplan
       - name: Terraform Apply
