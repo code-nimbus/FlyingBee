@@ -32,9 +32,7 @@ ALGORITHM=${algorithm}
 TRAVELPAYOUTS_API_KEY=${travelpayouts_api_key}
 TRAVELPAYOUTS_MARKER=${travelpayouts_marker}
 TRAVELPAYOUTS_BASE_URL=${travelpayouts_base_url}
-DATABASE_URL=${database_url}
 DUFFEL_API_TOKEN=${duffel_api_token}
-KAFKA_BOOTSTRAP_SERVERS=${kafka_bootstrap_servers}
 EOF
 
 # Run the docker-compose command to build and start the containers
