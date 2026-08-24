@@ -16,7 +16,7 @@ systemctl enable docker
 # Clone the FlyingBee repository
 
 if [ -n "${repo_url}" ]; then
-    git clone "https://${gh_pat}@github.com/FlyingBee/{repo_url}.git"
+    git clone "https://${gh_pat}@github.com/${repo_url}.git"
 
 # Create the .env file 
     cat <<EOF > flyingbee/backend/.env
@@ -38,3 +38,4 @@ EOF
 # Run the docker-compose command to build and start the containers
 cd flyingbee/backend
 docker-compose up -d --build
+fi
