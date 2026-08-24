@@ -26,7 +26,6 @@ MAIL_PASSWORD=${mail_password}
 MAIL_FROM=${mail_from}
 MAIL_PORT=${mail_port}
 MAIL_SERVER=${mail_server}
-ACCESS_TOKEN_SECRET=${access_token_secret}
 ACCESS_TOKEN_EXPIRE_MINUTES=${access_token_expire_minutes}
 SECRET_KEY=${secret_key}
 ALGORITHM=${algorithm}
