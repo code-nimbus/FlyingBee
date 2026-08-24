@@ -15,12 +15,15 @@ systemctl enable docker
 
 # Clone the FlyingBee repository
 
-if [ -n "${repo_url}" ]; then
-    git clone "https://${gh_pat}@github.com/${repo_url}.git"
+REPO_DIR="/FlyingBee"
+
+git clone "https://${GITHUB_TOKEN}@github.com/code-nimbus/FlyingBee.git" "$REPO_DIR"
+    
 
 # Create the .env file 
-    cat <<EOF > flyingbee/backend/.env
 
+
+cat > "$REPO_DIR/backend/.env" <<EOF
 MAIL_USERNAME=${mail_username}
 MAIL_PASSWORD=${mail_password}
 MAIL_FROM=${mail_from}
@@ -36,6 +39,6 @@ DUFFEL_API_TOKEN=${duffel_api_token}
 EOF
 
 # Run the docker-compose command to build and start the containers
-cd flyingbee/backend
+cd "$REPO_DIR/backend"
 docker-compose up -d --build
 fi
