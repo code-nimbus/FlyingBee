@@ -36,7 +36,7 @@ resource "aws_instance" "app_server" {
   ami           = data.aws_ami.ubuntu.id
   instance_type = var.instance_type
   user_data     = templatefile("./setup.sh",{
-    repo_url = var.repo_url
+    
     gh_pat = var.gh_pat
     mail_username = var.mail_username
     mail_password = var.mail_password
