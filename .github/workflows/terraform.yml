@@ -20,7 +20,7 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}      
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v1
-        
+
       - name: Terraform Init
         run: terraform -chdir=terraform init
       - name: Terraform Validate
@@ -29,7 +29,7 @@ jobs:
         run: |
           cat <<EOF > terraform/terraform.tfvars
           gh_pat = "${{ secrets.GH_PAT }}"
-          repo_url = "${{ secrets.REPO_URL }}"
+          
           mail_username = "${{ secrets.MAIL_USERNAME }}"
           mail_password = "${{ secrets.MAIL_PASSWORD }}"
           mail_from = "${{ secrets.MAIL_FROM }}"

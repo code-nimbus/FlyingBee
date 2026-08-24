@@ -17,7 +17,7 @@ systemctl enable docker
 
 REPO_DIR="/FlyingBee"
 
-# git clone "https://${GITHUB_TOKEN}@github.com/code-nimbus/FlyingBee.git" "$REPO_DIR"
+
 git clone "https://${gh_pat}@github.com/code-nimbus/FlyingBee.git" "$REPO_DIR"
     
 
@@ -42,4 +42,4 @@ EOF
 # Run the docker-compose command to build and start the containers
 cd "$REPO_DIR/backend"
 docker-compose up -d --build
-fi
+# fi

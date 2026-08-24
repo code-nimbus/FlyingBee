@@ -11,12 +11,6 @@ variable "instance_type" {
   default     = "t4g.micro"
 }
 
-variable "repo_url" {
-  description = "URL of the Git repository to clone on the EC2 instance."
-  type        = string
-  default     = ""
-}
-
 variable "gh_pat" {
   description = "GitHub Personal Access Token used to clone the repository."
   type        = string
