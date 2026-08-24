@@ -20,6 +20,7 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}      
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v1
+        
       - name: Terraform Init
         run: terraform -chdir=terraform init
       - name: Terraform Validate
@@ -43,7 +44,7 @@ jobs:
           travelpayouts_base_url = "${{ secrets.TRAVELPAYOUTS_BASE_URL }}"
           duffel_api_token = "${{ secrets.DUFFEL_API_TOKEN }}"
           EOF
-          
+
       - name: Terraform Plan
         run: terraform -chdir=terraform plan -out=tfplan
       - name: Terraform Apply
