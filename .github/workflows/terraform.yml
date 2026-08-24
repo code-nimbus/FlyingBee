@@ -28,7 +28,7 @@ jobs:
       - name: Create Terraform tfvars file
         run: |
           cat <<EOF > terraform/terraform.tfvars
-          gh_pat = "${{ secrets.GH_PAT }}"
+          
           
           mail_username = "${{ secrets.MAIL_USERNAME }}"
           mail_password = "${{ secrets.MAIL_PASSWORD }}"

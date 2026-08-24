@@ -11,12 +11,7 @@ variable "instance_type" {
   default     = "t4g.micro"
 }
 
-variable "gh_pat" {
-  description = "GitHub Personal Access Token used to clone the repository."
-  type        = string
-  sensitive   = true
-  default     = ""
-}
+
 
 variable "mail_username" {
   description = "SMTP username used by the application."

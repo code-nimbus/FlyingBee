@@ -18,7 +18,7 @@ systemctl enable docker
 REPO_DIR="/FlyingBee"
 
 
-git clone "https://${gh_pat}@github.com/code-nimbus/FlyingBee.git" "$REPO_DIR"
+git clone "https://github.com/code-nimbus/FlyingBee.git" "$REPO_DIR"
     
 
 # Create the .env file 

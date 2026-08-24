@@ -37,7 +37,7 @@ resource "aws_instance" "app_server" {
   instance_type = var.instance_type
   user_data     = templatefile("./setup.sh",{
     
-    gh_pat = var.gh_pat
+    
     mail_username = var.mail_username
     mail_password = var.mail_password
     mail_from = var.mail_from
