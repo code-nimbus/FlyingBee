@@ -24,7 +24,27 @@ jobs:
         run: terraform -chdir=terraform init
       - name: Terraform Validate
         run: terraform -chdir=terraform validate
+      - name: Create Terraform tfvars file
+        run: |
+          cat <<EOF > terraform/terraform.tfvars
+          gh_pat = "${{ secrets.GH_PAT }}"
+          repo_url = "${{ secrets.REPO_URL }}"
+          mail_username = "${{ secrets.MAIL_USERNAME }}"
+          mail_password = "${{ secrets.MAIL_PASSWORD }}"
+          mail_from = "${{ secrets.MAIL_FROM }}"
+          mail_port = "${{ secrets.MAIL_PORT }}"
+          mail_server = "${{ secrets.MAIL_SERVER }}"
+          access_token_secret = "${{ secrets.ACCESS_TOKEN_SECRET }}"
+          access_token_expire_minutes = "${{ secrets.ACCESS_TOKEN_EXPIRE_MINUTES }}"
+          secret_key = "${{ secrets.SECRET_KEY }}"
+          algorithm = "${{ secrets.ALGORITHM }}"
+          travelpayouts_api_key = "${{ secrets.TRAVELPAYOUTS_API_KEY }}"
+          travelpayouts_marker = "${{ secrets.TRAVELPAYOUTS_MARKER }}"
+          travelpayouts_base_url = "${{ secrets.TRAVELPAYOUTS_BASE_URL }}"
+          database_url = "${{ secrets.DATABASE_URL }}"
+          duffel_api_token = "${{ secrets.DUFFEL_API_TOKEN }}"
+          EOF
       - name: Terraform Plan
         run: terraform -chdir=terraform plan -out=tfplan
       - name: Terraform Apply
-        run: terraform -chdir=terraform apply -auto-approve tfplan
+        run: terraform -chdir=terraform apply -auto-approve tfplan 

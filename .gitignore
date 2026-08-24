@@ -15,12 +15,15 @@ __pycache__/
 # IDEs
 .vscode/
 .idea/
+
 # Terraform
 .terraform/
 *.tfstate
 *.tfstate.*
 crash.log
 crash.*.log
+terraform/terraform.tfvars
+terraform/terraform.tfvars.json
 
 
 # AWS credentials
